@@ -2,6 +2,7 @@ import os
 import json
 import shutil
 import argparse
+import difflib
 from datetime import datetime
 
 SBAC_DIR = ".sbac"
@@ -25,6 +26,13 @@ def save_json(file_path, data):
         json.dump(data, file, indent=4, ensure_ascii=False)
 
 
+def validate_repository():
+    if not repository_exists():
+        print("Error: primero debes inicializar el repositorio con: python main.py init")
+        return False
+    return True
+
+
 def init_repository():
     if repository_exists():
         print("El repositorio SBAC ya existe.")
@@ -40,12 +48,15 @@ def init_repository():
 
 
 def add_file(file_path):
-    if not repository_exists():
-        print("Error: primero debes inicializar el repositorio.")
+    if not validate_repository():
         return
 
     if not os.path.exists(file_path):
         print(f"Error: el archivo '{file_path}' no existe.")
+        return
+
+    if file_path.startswith(SBAC_DIR):
+        print("Error: no puedes agregar archivos internos de .sbac.")
         return
 
     index_data = load_json(INDEX_FILE)
@@ -61,8 +72,7 @@ def add_file(file_path):
 
 
 def status():
-    if not repository_exists():
-        print("Error: no existe un repositorio SBAC.")
+    if not validate_repository():
         return
 
     index_data = load_json(INDEX_FILE)
@@ -72,6 +82,7 @@ def status():
 
     if not tracked_files:
         print("No hay archivos en seguimiento.")
+        print("============================================\n")
         return
 
     for file_path in tracked_files:
@@ -84,8 +95,7 @@ def status():
 
 
 def commit(message):
-    if not repository_exists():
-        print("Error: primero debes inicializar el repositorio.")
+    if not validate_repository():
         return
 
     index_data = load_json(INDEX_FILE)
@@ -97,18 +107,23 @@ def commit(message):
         print("No hay archivos en seguimiento para crear un commit.")
         return
 
+    existing_files = [file for file in tracked_files if os.path.exists(file)]
+
+    if not existing_files:
+        print("No hay archivos existentes para guardar en el commit.")
+        return
+
     new_commit_id = config_data["last_commit"] + 1
     commit_folder = os.path.join(COMMITS_DIR, str(new_commit_id))
     os.makedirs(commit_folder)
 
     copied_files = []
 
-    for file_path in tracked_files:
-        if os.path.exists(file_path):
-            destination = os.path.join(commit_folder, file_path)
-            os.makedirs(os.path.dirname(destination) or ".", exist_ok=True)
-            shutil.copy2(file_path, destination)
-            copied_files.append(file_path)
+    for file_path in existing_files:
+        destination = os.path.join(commit_folder, file_path)
+        os.makedirs(os.path.dirname(destination) or ".", exist_ok=True)
+        shutil.copy2(file_path, destination)
+        copied_files.append(file_path)
 
     metadata = {
         "id": new_commit_id,
@@ -128,8 +143,7 @@ def commit(message):
 
 
 def history():
-    if not repository_exists():
-        print("Error: no existe un repositorio SBAC.")
+    if not validate_repository():
         return
 
     commits = os.listdir(COMMITS_DIR)
@@ -156,8 +170,7 @@ def history():
 
 
 def checkout(version):
-    if not repository_exists():
-        print("Error: no existe un repositorio SBAC.")
+    if not validate_repository():
         return
 
     commit_folder = os.path.join(COMMITS_DIR, str(version))
@@ -179,8 +192,7 @@ def checkout(version):
 
 
 def create_baseline(name):
-    if not repository_exists():
-        print("Error: no existe un repositorio SBAC.")
+    if not validate_repository():
         return
 
     config_data = load_json(CONFIG_FILE)
@@ -190,6 +202,11 @@ def create_baseline(name):
         return
 
     baselines_data = load_json(BASELINES_FILE)
+
+    for baseline in baselines_data["baselines"]:
+        if baseline["name"] == name:
+            print(f"Error: ya existe una línea base llamada '{name}'.")
+            return
 
     baseline = {
         "name": name,
@@ -206,8 +223,7 @@ def create_baseline(name):
 
 
 def list_baselines():
-    if not repository_exists():
-        print("Error: no existe un repositorio SBAC.")
+    if not validate_repository():
         return
 
     baselines_data = load_json(BASELINES_FILE)
@@ -228,6 +244,132 @@ def list_baselines():
     print("=================================\n")
 
 
+def get_baseline_commit_id(name):
+    baselines_data = load_json(BASELINES_FILE)
+
+    for baseline in baselines_data["baselines"]:
+        if baseline["name"] == name:
+            return baseline["commit_id"]
+
+    return None
+
+
+def diff_versions(version1, version2):
+    if not validate_repository():
+        return
+
+    commit1_folder = os.path.join(COMMITS_DIR, str(version1))
+    commit2_folder = os.path.join(COMMITS_DIR, str(version2))
+
+    if not os.path.exists(commit1_folder):
+        print(f"Error: la versión {version1} no existe.")
+        return
+
+    if not os.path.exists(commit2_folder):
+        print(f"Error: la versión {version2} no existe.")
+        return
+
+    metadata1 = load_json(os.path.join(commit1_folder, "metadata.json"))
+    metadata2 = load_json(os.path.join(commit2_folder, "metadata.json"))
+
+    files1 = set(metadata1["files"])
+    files2 = set(metadata2["files"])
+    all_files = sorted(files1.union(files2))
+
+    print("\n========== DIFERENCIAS ENTRE VERSIONES ==========")
+    print(f"Comparando versión {version1} contra versión {version2}")
+    print("=================================================\n")
+
+    for file_path in all_files:
+        file1_path = os.path.join(commit1_folder, file_path)
+        file2_path = os.path.join(commit2_folder, file_path)
+
+        print(f"\nArchivo: {file_path}")
+        print("-----------------------------------------------")
+
+        if not os.path.exists(file1_path):
+            print("Archivo agregado en la segunda versión.")
+            continue
+
+        if not os.path.exists(file2_path):
+            print("Archivo eliminado en la segunda versión.")
+            continue
+
+        with open(file1_path, "r", encoding="utf-8", errors="ignore") as file1:
+            content1 = file1.readlines()
+
+        with open(file2_path, "r", encoding="utf-8", errors="ignore") as file2:
+            content2 = file2.readlines()
+
+        diff = difflib.unified_diff(
+            content1,
+            content2,
+            fromfile=f"version_{version1}/{file_path}",
+            tofile=f"version_{version2}/{file_path}",
+            lineterm=""
+        )
+
+        diff_result = list(diff)
+
+        if not diff_result:
+            print("No hay diferencias.")
+        else:
+            for line in diff_result:
+                print(line)
+
+    print("\n=================================================\n")
+
+
+def diff_baselines(baseline1, baseline2):
+    if not validate_repository():
+        return
+
+    commit_id_1 = get_baseline_commit_id(baseline1)
+    commit_id_2 = get_baseline_commit_id(baseline2)
+
+    if commit_id_1 is None:
+        print(f"Error: la línea base '{baseline1}' no existe.")
+        return
+
+    if commit_id_2 is None:
+        print(f"Error: la línea base '{baseline2}' no existe.")
+        return
+
+    print(f"Comparando línea base '{baseline1}' con '{baseline2}'")
+    diff_versions(commit_id_1, commit_id_2)
+
+
+def run_system_check():
+    if not validate_repository():
+        return
+
+    print("\n========== VERIFICACIÓN GENERAL DEL SISTEMA ==========")
+
+    required_paths = [
+        SBAC_DIR,
+        COMMITS_DIR,
+        INDEX_FILE,
+        CONFIG_FILE,
+        BASELINES_FILE
+    ]
+
+    all_ok = True
+
+    for path in required_paths:
+        if os.path.exists(path):
+            print(f"[OK] Existe: {path}")
+        else:
+            print(f"[ERROR] Falta: {path}")
+            all_ok = False
+
+    if all_ok:
+        print("Resultado: el sistema tiene su estructura interna completa.")
+    else:
+        print("Resultado: el sistema tiene errores en su estructura interna.")
+
+    print("======================================================\n")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="SBAC - Sistema Básico de Administración de Configuración"
@@ -235,22 +377,34 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command")
 
-    subparsers.add_parser("init")
-    subparsers.add_parser("status")
-    subparsers.add_parser("history")
-    subparsers.add_parser("list-baselines")
+    subparsers.add_parser("init", help="Inicializar repositorio")
+    subparsers.add_parser("status", help="Mostrar estado del repositorio")
+    subparsers.add_parser("history", help="Mostrar historial de versiones")
+    subparsers.add_parser("list-baselines", help="Listar líneas base")
+    subparsers.add_parser("check", help="Verificar estructura interna del sistema")
 
-    add_parser = subparsers.add_parser("add")
+    add_parser = subparsers.add_parser("add", help="Agregar archivo al seguimiento")
     add_parser.add_argument("file")
 
-    commit_parser = subparsers.add_parser("commit")
+    commit_parser = subparsers.add_parser("commit", help="Crear una nueva versión")
     commit_parser.add_argument("message")
 
-    checkout_parser = subparsers.add_parser("checkout")
+    checkout_parser = subparsers.add_parser("checkout", help="Restaurar una versión")
     checkout_parser.add_argument("version", type=int)
 
-    baseline_parser = subparsers.add_parser("baseline")
+    baseline_parser = subparsers.add_parser("baseline", help="Crear línea base")
     baseline_parser.add_argument("name")
+
+    diff_parser = subparsers.add_parser("diff", help="Comparar dos versiones")
+    diff_parser.add_argument("version1", type=int)
+    diff_parser.add_argument("version2", type=int)
+
+    diff_baseline_parser = subparsers.add_parser(
+        "diff-baseline",
+        help="Comparar dos líneas base"
+    )
+    diff_baseline_parser.add_argument("baseline1")
+    diff_baseline_parser.add_argument("baseline2")
 
     args = parser.parse_args()
 
@@ -277,6 +431,15 @@ def main():
 
     elif args.command == "list-baselines":
         list_baselines()
+
+    elif args.command == "diff":
+        diff_versions(args.version1, args.version2)
+
+    elif args.command == "diff-baseline":
+        diff_baselines(args.baseline1, args.baseline2)
+
+    elif args.command == "check":
+        run_system_check()
 
     else:
         parser.print_help()
