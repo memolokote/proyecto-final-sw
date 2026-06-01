@@ -78,11 +78,11 @@ def status():
     index_data = load_json(INDEX_FILE)
     tracked_files = index_data["tracked_files"]
 
-    print("\n========== ESTADO DEL REPOSITORIO ==========")
+    print("\n Estado del repositorio")
 
     if not tracked_files:
         print("No hay archivos en seguimiento.")
-        print("============================================\n")
+        print("\n")
         return
 
     for file_path in tracked_files:
@@ -91,7 +91,7 @@ def status():
         else:
             print(f"[ERROR] Archivo faltante: {file_path}")
 
-    print("============================================\n")
+    print("---\n")
 
 
 def commit(message):
@@ -154,7 +154,7 @@ def history():
 
     commits = sorted(commits, key=lambda x: int(x))
 
-    print("\n========== HISTORIAL DE VERSIONES ==========")
+    print("\n Historial de versiones")
 
     for commit_id in commits:
         metadata_path = os.path.join(COMMITS_DIR, commit_id, "metadata.json")
@@ -164,9 +164,9 @@ def history():
         print(f"Fecha: {metadata['date']}")
         print(f"Mensaje: {metadata['message']}")
         print(f"Archivos: {', '.join(metadata['files'])}")
-        print("--------------------------------------------")
+        print("---")
 
-    print("============================================\n")
+    print("---\n")
 
 
 def checkout(version):
@@ -233,15 +233,15 @@ def list_baselines():
         print("No hay líneas base registradas.")
         return
 
-    print("\n========== LÍNEAS BASE ==========")
+    print("\n Linea Base")
 
     for baseline in baselines:
         print(f"Nombre: {baseline['name']}")
         print(f"Commit: {baseline['commit_id']}")
         print(f"Fecha: {baseline['date']}")
-        print("---------------------------------")
+        print("---")
 
-    print("=================================\n")
+    print("---\n")
 
 
 def get_baseline_commit_id(name):
@@ -276,16 +276,16 @@ def diff_versions(version1, version2):
     files2 = set(metadata2["files"])
     all_files = sorted(files1.union(files2))
 
-    print("\n========== DIFERENCIAS ENTRE VERSIONES ==========")
+    print("\n Diferencias entre versiones")
     print(f"Comparando versión {version1} contra versión {version2}")
-    print("=================================================\n")
+    print("---\n")
 
     for file_path in all_files:
         file1_path = os.path.join(commit1_folder, file_path)
         file2_path = os.path.join(commit2_folder, file_path)
 
         print(f"\nArchivo: {file_path}")
-        print("-----------------------------------------------")
+        print("---")
 
         if not os.path.exists(file1_path):
             print("Archivo agregado en la segunda versión.")
@@ -317,7 +317,7 @@ def diff_versions(version1, version2):
             for line in diff_result:
                 print(line)
 
-    print("\n=================================================\n")
+    print("\n---\n")
 
 
 def diff_baselines(baseline1, baseline2):
@@ -343,7 +343,7 @@ def run_system_check():
     if not validate_repository():
         return
 
-    print("\n========== VERIFICACIÓN GENERAL DEL SISTEMA ==========")
+    print("\n Veriificacion general del sistema")
 
     required_paths = [
         SBAC_DIR,
@@ -367,7 +367,7 @@ def run_system_check():
     else:
         print("Resultado: el sistema tiene errores en su estructura interna.")
 
-    print("======================================================\n")
+    print("---\n")
 
 
 def main():
